@@ -1,0 +1,31 @@
+name: Build EXE
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        pip install pyinstaller selenium undetected-chromedriver selenium-stealth fake-useragent beautifulsoup4 pandas openpyxl pytz
+    
+    - name: Build EXE
+      run: |
+        pyinstaller --onefile --windowed unified_crawler.py
+    
+    - name: Upload EXE
+      uses: actions/upload-artifact@v3
+      with:
+        name: shopping-crawler-exe
+        path: dist/*.exe

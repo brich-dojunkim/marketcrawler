@@ -1,0 +1,23 @@
+#!/bin/bash
+echo "윈도우용 파일 생성 중..."
+
+mkdir -p windows_dist
+cp *.py windows_dist/
+
+cat > windows_dist/install.bat << 'EOF'
+@echo off
+pip install selenium undetected-chromedriver selenium-stealth fake-useragent beautifulsoup4 pandas openpyxl pytz
+echo 설치 완료!
+pause
+EOF
+
+cat > windows_dist/run.bat << 'EOF'
+@echo off
+python unified_crawler.py
+pause
+EOF
+
+echo "완료! windows_dist 폴더를 윈도우 사용자에게 주세요."
+EOF
+
+
