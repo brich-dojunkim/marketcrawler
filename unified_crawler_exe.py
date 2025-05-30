@@ -1,5 +1,6 @@
 """
-unified_crawler_exe.py - 하나의 엑셀로 통합하는 쇼핑몰 크롤러 (실행파일용)
+unified_crawler_exe.py - 하나의 엑셀로 통합하는 쇼핑몰 크롤러
+Windows용 실행파일 빌드를 위한 완전한 통합 버전
 """
 
 import tkinter as tk
@@ -13,22 +14,44 @@ import datetime
 import json
 import traceback
 import pandas as pd
+import platform
+import tempfile
+import shutil
 
 class UnifiedCrawlerGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("통합 쇼핑몰 크롤러 v1.0")
-        self.root.geometry("700x600")
+        self.root.geometry("700x650")
+        
+        # 시스템별 폰트 설정
+        self.setup_fonts()
         
         # 기본 설정
         self.config = {
             "output_dir": str(Path.home() / "Desktop" / "쇼핑몰크롤링결과"),
             "count": 50,
             "sites": {
-                "cjonstyle": {"name": "CJ온스타일", "enabled": True, "url": "https://display.cjonstyle.com/p/category/categoryMain?dpCateId=G00011"},
-                "gmarket": {"name": "G마켓", "enabled": True, "url": "https://www.gmarket.co.kr/n/best?groupCode=100000001&subGroupCode=200000004"},
-                "gsshop": {"name": "GS샵", "enabled": True, "url": "https://www.gsshop.com/shop/sect/sectL.gs?sectid=1660575&eh=eyJwYWdlTnVtYmVyIjo3LCJzZWxlY3RlZCI6Im9wdC1wYWdlIiwibHNlY3RZbiI6IlkifQ%3D%3D"},
-                "ssg": {"name": "신세계몰", "enabled": True, "url": "https://www.ssg.com/disp/category.ssg?dispCtgId=6000188618&pageSize=100"}
+                "cjonstyle": {
+                    "name": "CJ온스타일", 
+                    "enabled": True, 
+                    "url": "https://display.cjonstyle.com/p/category/categoryMain?dpCateId=G00011"
+                },
+                "gmarket": {
+                    "name": "G마켓", 
+                    "enabled": True, 
+                    "url": "https://www.gmarket.co.kr/n/best?groupCode=100000001&subGroupCode=200000004"
+                },
+                "gsshop": {
+                    "name": "GS샵", 
+                    "enabled": True, 
+                    "url": "https://www.gsshop.com/shop/sect/sectL.gs?sectid=1660575&eh=eyJwYWdlTnVtYmVyIjo3LCJzZWxlY3RlZCI6Im9wdC1wYWdlIiwibHNlY3RZbiI6IlkifQ%3D%3D"
+                },
+                "ssg": {
+                    "name": "신세계몰", 
+                    "enabled": True, 
+                    "url": "https://www.ssg.com/disp/category.ssg?dispCtgId=6000188618&pageSize=100"
+                }
             }
         }
         
@@ -37,42 +60,58 @@ class UnifiedCrawlerGUI:
         self.setup_ui()
         self.load_config()
 
+    def setup_fonts(self):
+        """시스템별 폰트 설정"""
+        system = platform.system()
+        if system == "Windows":
+            self.font_family = "맑은 고딕"
+        elif system == "Darwin":  # macOS
+            self.font_family = "SF Pro Display"
+        else:  # Linux
+            self.font_family = "DejaVu Sans"
+        
+        # 기본 폰트 설정
+        self.title_font = (self.font_family, 18, "bold")
+        self.header_font = (self.font_family, 12, "bold")
+        self.normal_font = (self.font_family, 10)
+        self.small_font = (self.font_family, 9)
+
     def setup_ui(self):
         # 메인 프레임
         main_frame = ttk.Frame(self.root, padding="20")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # 제목
-        title_label = ttk.Label(main_frame, text="통합 쇼핑몰 크롤러", font=("맑은 고딕", 18, "bold"))
+        title_label = ttk.Label(main_frame, text="통합 쇼핑몰 크롤러", font=self.title_font)
         title_label.grid(row=0, column=0, columnspan=2, pady=(0, 10))
         
         desc_label = ttk.Label(main_frame, text="여러 쇼핑몰의 상품 정보를 하나의 엑셀 파일로 수집합니다", 
-                              font=("맑은 고딕", 10), foreground="gray")
+                              font=self.small_font, foreground="gray")
         desc_label.grid(row=1, column=0, columnspan=2, pady=(0, 20))
         
         # 저장 폴더
-        ttk.Label(main_frame, text="저장 폴더:", font=("맑은 고딕", 10)).grid(row=2, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="저장 폴더:", font=self.normal_font).grid(row=2, column=0, sticky=tk.W, pady=5)
         folder_frame = ttk.Frame(main_frame)
         folder_frame.grid(row=2, column=1, sticky=(tk.W, tk.E), padx=(10, 0))
         folder_frame.columnconfigure(0, weight=1)
         
         self.folder_var = tk.StringVar(value=self.config["output_dir"])
-        folder_entry = ttk.Entry(folder_frame, textvariable=self.folder_var, width=45, font=("맑은 고딕", 9))
+        folder_entry = ttk.Entry(folder_frame, textvariable=self.folder_var, width=45, font=self.small_font)
         folder_entry.grid(row=0, column=0, sticky=(tk.W, tk.E))
         ttk.Button(folder_frame, text="찾기", command=self.browse_folder).grid(row=0, column=1, padx=(5, 0))
         
         # 수집 개수
-        ttk.Label(main_frame, text="각 사이트별 수집 개수:", font=("맑은 고딕", 10)).grid(row=3, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="각 사이트별 수집 개수:", font=self.normal_font).grid(row=3, column=0, sticky=tk.W, pady=5)
         count_frame = ttk.Frame(main_frame)
         count_frame.grid(row=3, column=1, sticky=tk.W, padx=(10, 0))
         
         self.count_var = tk.IntVar(value=self.config["count"])
-        count_spin = ttk.Spinbox(count_frame, from_=10, to=200, textvariable=self.count_var, width=10, font=("맑은 고딕", 9))
+        count_spin = ttk.Spinbox(count_frame, from_=10, to=200, textvariable=self.count_var, width=10, font=self.small_font)
         count_spin.pack(side=tk.LEFT)
-        ttk.Label(count_frame, text="개 (권장: 50~100개)", font=("맑은 고딕", 9)).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(count_frame, text="개 (권장: 50~100개)", font=self.small_font).pack(side=tk.LEFT, padx=(5, 0))
         
         # 사이트 선택
-        ttk.Label(main_frame, text="수집할 쇼핑몰:", font=("맑은 고딕", 10)).grid(row=4, column=0, sticky=tk.W, pady=(15, 5))
+        ttk.Label(main_frame, text="수집할 쇼핑몰:", font=self.normal_font).grid(row=4, column=0, sticky=tk.W, pady=(15, 5))
         sites_frame = ttk.LabelFrame(main_frame, text="사이트 선택", padding="10")
         sites_frame.grid(row=4, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=5)
         
@@ -80,7 +119,7 @@ class UnifiedCrawlerGUI:
         for i, (site_id, site_config) in enumerate(self.config["sites"].items()):
             var = tk.BooleanVar(value=site_config["enabled"])
             self.site_vars[site_id] = var
-            cb = ttk.Checkbutton(sites_frame, text=site_config["name"], variable=var, font=("맑은 고딕", 10))
+            cb = ttk.Checkbutton(sites_frame, text=site_config["name"], variable=var, font=self.normal_font)
             cb.grid(row=i//2, column=i%2, sticky=tk.W, pady=3, padx=10)
         
         # 전체 선택/해제 버튼
@@ -93,8 +132,7 @@ class UnifiedCrawlerGUI:
         button_frame = ttk.Frame(main_frame)
         button_frame.grid(row=5, column=0, columnspan=2, pady=20)
         
-        self.start_btn = ttk.Button(button_frame, text="🚀 크롤링 시작", command=self.start_crawling, 
-                                   style="Accent.TButton", width=15)
+        self.start_btn = ttk.Button(button_frame, text="🚀 크롤링 시작", command=self.start_crawling, width=15)
         self.start_btn.pack(side=tk.LEFT, padx=5)
         
         self.stop_btn = ttk.Button(button_frame, text="⏹️ 중지", command=self.stop_crawling, 
@@ -108,9 +146,9 @@ class UnifiedCrawlerGUI:
         progress_frame.grid(row=6, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=10)
         progress_frame.columnconfigure(1, weight=1)
         
-        ttk.Label(progress_frame, text="상태:", font=("맑은 고딕", 9)).grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(progress_frame, text="상태:", font=self.small_font).grid(row=0, column=0, sticky=tk.W)
         self.status_var = tk.StringVar(value="대기 중")
-        status_label = ttk.Label(progress_frame, textvariable=self.status_var, font=("맑은 고딕", 9, "bold"))
+        status_label = ttk.Label(progress_frame, textvariable=self.status_var, font=(self.font_family, 9, "bold"))
         status_label.grid(row=0, column=1, sticky=tk.W, padx=(5, 0))
         
         # 진행 바
@@ -118,8 +156,8 @@ class UnifiedCrawlerGUI:
         self.progress.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(5, 0))
         
         # 로그
-        ttk.Label(main_frame, text="진행 로그:", font=("맑은 고딕", 10)).grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=(15, 5))
-        self.log_text = scrolledtext.ScrolledText(main_frame, height=15, width=80, font=("맑은 고딕", 9))
+        ttk.Label(main_frame, text="진행 로그:", font=self.normal_font).grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=(15, 5))
+        self.log_text = scrolledtext.ScrolledText(main_frame, height=15, width=80, font=self.small_font)
         self.log_text.grid(row=8, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # 그리드 설정
@@ -144,7 +182,12 @@ class UnifiedCrawlerGUI:
     def open_folder(self):
         folder = self.folder_var.get()
         if os.path.exists(folder):
-            os.startfile(folder)
+            if platform.system() == "Windows":
+                os.startfile(folder)
+            elif platform.system() == "Darwin":  # macOS
+                os.system(f"open '{folder}'")
+            else:  # Linux
+                os.system(f"xdg-open '{folder}'")
         else:
             messagebox.showinfo("알림", "폴더가 존재하지 않습니다.")
 
@@ -166,8 +209,9 @@ class UnifiedCrawlerGUI:
 
     def load_config(self):
         try:
-            if os.path.exists("crawler_config.json"):
-                with open("crawler_config.json", "r", encoding="utf-8") as f:
+            config_file = "crawler_config.json"
+            if os.path.exists(config_file):
+                with open(config_file, "r", encoding="utf-8") as f:
                     saved = json.load(f)
                     self.config.update(saved)
                     self.update_ui()
@@ -176,7 +220,8 @@ class UnifiedCrawlerGUI:
 
     def save_config(self):
         try:
-            with open("crawler_config.json", "w", encoding="utf-8") as f:
+            config_file = "crawler_config.json"
+            with open(config_file, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
         except Exception as e:
             self.log(f"설정 저장 실패: {e}", "WARNING")
@@ -185,7 +230,8 @@ class UnifiedCrawlerGUI:
         self.folder_var.set(self.config["output_dir"])
         self.count_var.set(self.config["count"])
         for site_id, var in self.site_vars.items():
-            var.set(self.config["sites"][site_id]["enabled"])
+            if site_id in self.config["sites"]:
+                var.set(self.config["sites"][site_id]["enabled"])
 
     def start_crawling(self):
         # 설정 업데이트
@@ -255,7 +301,7 @@ class UnifiedCrawlerGUI:
                 else:
                     self.log(f"{site_config['name']} 실패 - 데이터 없음", "ERROR")
             except Exception as e:
-                self.log(f"{site_config['name']} 오류: {e}", "ERROR")
+                self.log(f"{site_config['name']} 오류: {str(e)}", "ERROR")
                 self.log(f"상세 오류: {traceback.format_exc()}")
             
             # 진행률 업데이트
@@ -332,19 +378,30 @@ class UnifiedCrawlerGUI:
     def load_module(self, name):
         """동적으로 모듈 로드"""
         try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            if current_dir not in sys.path:
-                sys.path.insert(0, current_dir)
+            # 실행파일인 경우 임시 디렉토리에서 파일 찾기
+            if getattr(sys, 'frozen', False):
+                # PyInstaller로 패키징된 경우
+                bundle_dir = sys._MEIPASS
+                module_path = os.path.join(bundle_dir, f"{name}.py")
+            else:
+                # 일반 Python 실행
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                module_path = os.path.join(current_dir, f"{name}.py")
             
-            path = f"{name}.py"
-            if not os.path.exists(path):
-                self.log(f"{name}.py 파일이 존재하지 않습니다", "ERROR")
+            if not os.path.exists(module_path):
+                self.log(f"{name}.py 파일이 존재하지 않습니다: {module_path}", "ERROR")
                 return None
             
+            # 모듈 이름이 이미 있으면 제거
             if name in sys.modules:
                 del sys.modules[name]
             
-            module = __import__(name)
+            # 동적 import
+            spec = importlib.util.spec_from_file_location(name, module_path)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            spec.loader.exec_module(module)
+            
             return module
             
         except Exception as e:
@@ -371,13 +428,13 @@ class UnifiedCrawlerGUI:
                 "순위": i,
                 "쇼핑몰": site_name,
                 "상품명": item.get("상품명", ""),
-                "브랜드명": item.get("브랜드명", item.get("브랜드", "")),
+                "브랜드명": item.get("브랜드명", item.get("브랜드", item.get("판매자명", ""))),
                 "상품ID": item.get("상품ID", ""),
                 "정가": item.get("정가"),
                 "최종가": item.get("최종가"),
                 "할인율": item.get("할인율"),
                 "가격내역": item.get("가격내역", ""),
-                "혜택": item.get("혜택", ""),
+                "혜택": item.get("혜택", item.get("프로모션태그", "")),
                 "리뷰/구매수": item.get("리뷰/구매수"),
                 "평점": item.get("평점"),
                 "리뷰수": item.get("리뷰수"),
@@ -399,20 +456,43 @@ class UnifiedCrawlerGUI:
             return None
         
         try:
-            # 임시로 모듈 설정 변경
-            orig_limit = getattr(module, 'LIMIT', 100)
-            orig_headless = getattr(module, 'HEADLESS', True)
-            orig_out_dir = getattr(module, 'OUT_DIR', Path("output"))
+            # 임시 결과 폴더 생성
+            temp_dir = tempfile.mkdtemp()
             
+            # 원본 설정 백업
+            original_settings = {}
+            for attr in ['LIMIT', 'HEADLESS', 'OUT_DIR', 'TARGET_URL']:
+                if hasattr(module, attr):
+                    original_settings[attr] = getattr(module, attr)
+            
+            # 설정 변경
             module.LIMIT = self.config["count"]
             module.HEADLESS = True
-            module.OUT_DIR = Path(self.config["output_dir"])
+            module.OUT_DIR = Path(temp_dir)
+            if hasattr(module, 'TARGET_URL'):
+                module.TARGET_URL = site_config["url"]
             
-            # 크롤링 실행 (기존 함수 활용하되 데이터만 반환하도록 수정 필요)
-            # 여기서는 임시 방편으로 기존 crawl 함수를 수정해야 함
-            # 실제로는 cjonstyle.py의 crawl 함수를 데이터 반환하도록 수정 필요
+            # 크롤링 실행
+            module.crawl()
             
-            return []  # 실제 구현 시 데이터 반환
+            # 생성된 엑셀 파일 찾기
+            excel_files = list(Path(temp_dir).glob("*.xlsx"))
+            if excel_files:
+                df = pd.read_excel(excel_files[0])
+                data = df.to_dict('records')
+                result = self.standardize_data(data, "CJ온스타일")
+                
+                # 임시 파일 정리
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                
+                # 원본 설정 복원
+                for attr, value in original_settings.items():
+                    setattr(module, attr, value)
+                
+                return result
+            
+            # 임시 파일 정리
+            shutil.rmtree(temp_dir, ignore_errors=True)
             
         except Exception as e:
             self.log(f"CJ온스타일 실행 오류: {e}", "ERROR")
@@ -425,20 +505,29 @@ class UnifiedCrawlerGUI:
             return None
         
         try:
-            # 임시 엑셀 파일 생성 후 데이터 읽어오기
-            temp_path = module.crawl(
+            # 임시 결과 폴더 생성
+            temp_dir = tempfile.mkdtemp()
+            
+            # 크롤링 실행
+            result_path = module.crawl(
                 list_url=site_config["url"],
                 top_n=self.config["count"],
                 headless=True,
-                out_dir=self.config["output_dir"]
+                out_dir=temp_dir
             )
             
-            # 생성된 엑셀 파일 읽기
-            if temp_path and os.path.exists(temp_path):
-                df = pd.read_excel(temp_path)
+            # 결과 파일 읽기
+            if result_path and os.path.exists(result_path):
+                df = pd.read_excel(result_path)
                 data = df.to_dict('records')
-                os.remove(temp_path)  # 임시 파일 삭제
-                return self.standardize_data(data, "G마켓")
+                result = self.standardize_data(data, "G마켓")
+                
+                # 임시 파일 정리
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                return result
+            
+            # 임시 파일 정리
+            shutil.rmtree(temp_dir, ignore_errors=True)
             
         except Exception as e:
             self.log(f"G마켓 실행 오류: {e}", "ERROR")
@@ -451,18 +540,32 @@ class UnifiedCrawlerGUI:
             return None
         
         try:
-            # 기존 crawl 함수를 활용하여 데이터 수집
-            # 실제로는 gsshop.py를 수정해서 데이터를 직접 반환하도록 해야 함
+            # 임시 결과 폴더 생성
+            temp_dir = tempfile.mkdtemp()
+            
+            # 크롤링 실행
             module.crawl(
                 url=site_config["url"],
                 top=self.config["count"],
                 headless=True,
-                out_dir=self.config["output_dir"],
+                out_dir=temp_dir,
                 stall_max=5,
                 snap_dir=None
             )
             
-            return []  # 실제 구현 시 데이터 반환
+            # 생성된 엑셀 파일 찾기
+            excel_files = list(Path(temp_dir).glob("*.xlsx"))
+            if excel_files:
+                df = pd.read_excel(excel_files[0])
+                data = df.to_dict('records')
+                result = self.standardize_data(data, "GS샵")
+                
+                # 임시 파일 정리
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                return result
+            
+            # 임시 파일 정리
+            shutil.rmtree(temp_dir, ignore_errors=True)
             
         except Exception as e:
             self.log(f"GS샵 실행 오류: {e}", "ERROR")
@@ -475,19 +578,29 @@ class UnifiedCrawlerGUI:
             return None
         
         try:
-            temp_path = module.crawl_ssg(
+            # 임시 결과 폴더 생성
+            temp_dir = tempfile.mkdtemp()
+            
+            # 크롤링 실행
+            result_path = module.crawl_ssg(
                 list_url=site_config["url"],
                 top_n=self.config["count"],
                 headless=True,
-                out_dir=self.config["output_dir"]
+                out_dir=temp_dir
             )
             
-            # 생성된 엑셀 파일 읽기
-            if temp_path and os.path.exists(temp_path):
-                df = pd.read_excel(temp_path)
+            # 결과 파일 읽기
+            if result_path and os.path.exists(result_path):
+                df = pd.read_excel(result_path)
                 data = df.to_dict('records')
-                os.remove(temp_path)  # 임시 파일 삭제
-                return self.standardize_data(data, "신세계몰")
+                result = self.standardize_data(data, "신세계몰")
+                
+                # 임시 파일 정리
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                return result
+            
+            # 임시 파일 정리
+            shutil.rmtree(temp_dir, ignore_errors=True)
             
         except Exception as e:
             self.log(f"신세계몰 실행 오류: {e}", "ERROR")
@@ -496,7 +609,19 @@ class UnifiedCrawlerGUI:
 def main():
     # 필요한 파일 확인
     required = ["cjonstyle.py", "gmarket.py", "gsshop.py", "ssg.py"]
-    missing = [f for f in required if not os.path.exists(f)]
+    missing = []
+    
+    for file in required:
+        # 실행파일인 경우와 일반 실행인 경우 모두 고려
+        if getattr(sys, 'frozen', False):
+            # PyInstaller로 패키징된 경우
+            file_path = os.path.join(sys._MEIPASS, file)
+        else:
+            # 일반 Python 실행
+            file_path = file
+            
+        if not os.path.exists(file_path):
+            missing.append(file)
     
     if missing:
         root = tk.Tk()
@@ -508,9 +633,11 @@ def main():
     
     try:
         root = tk.Tk()
-        # 아이콘 설정 (옵션)
+        
+        # Windows 아이콘 설정 (옵션)
         try:
-            root.iconbitmap('icon.ico')  # icon.ico 파일이 있다면
+            if platform.system() == "Windows":
+                root.iconbitmap('icon.ico')  # icon.ico 파일이 있다면
         except:
             pass
         
