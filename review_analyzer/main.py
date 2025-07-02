@@ -13,11 +13,9 @@ if current_dir not in sys.path:
 warnings.filterwarnings('ignore')
 
 from utils.data_loader import load_csv_data, identify_columns, validate_data
-from core.preprocessor import TextPreprocessor
 from core.analyzer import MorphologicalAnalyzer
 from core.sentiment import SentimentAnalyzer
 from keywords.extractor import KeywordExtractor
-from keywords.topic_modeling import TopicModeling
 from output.excel_exporter import ExcelExporter
 from config.settings import DEFAULT_DATA_FILE, DEFAULT_OUTPUT_DIR, ANALYSIS_PARAMS
 
@@ -31,11 +29,9 @@ class DataDrivenReviewAnalysisSystem:
         Args:
             output_dir: 출력 디렉토리 경로
         """
-        self.preprocessor = TextPreprocessor()
         self.analyzer = MorphologicalAnalyzer()
         self.sentiment_analyzer = SentimentAnalyzer()
         self.keyword_extractor = KeywordExtractor()
-        self.topic_modeling = TopicModeling()
         self.excel_exporter = ExcelExporter(output_dir)
         
         # 분석 결과 저장
@@ -46,6 +42,7 @@ class DataDrivenReviewAnalysisSystem:
         self.cluster_topics = None
         self.sentiment_keywords = None
         self.learned_patterns = None
+        self.transformers_comparison = None
         self.initial_count = 0
         self.final_count = 0
     
@@ -91,15 +88,20 @@ class DataDrivenReviewAnalysisSystem:
         return True
     
     def preprocess_data(self):
-        """최소한의 데이터 전처리"""
-        print("1. 기본 텍스트 정리 중...")
-        self.df = self.preprocessor.clean_dataframe(self.df, self.text_col)
+        """전처리 생략 - 원본 텍스트 그대로 사용"""
+        print("1. 원본 텍스트 그대로 사용 (전처리 생략)")
+        
+        # 단순히 원본 텍스트를 그대로 복사
+        self.df['cleaned_review'] = self.df[self.text_col]
         self.final_count = len(self.df)
+        
+        print(f"✅ 원본 텍스트 유지: {self.final_count:,}개 리뷰")
+        print(f"📏 평균 텍스트 길이: {self.df['cleaned_review'].str.len().mean():.1f}자")
     
     def tokenize_data(self, method='kiwi'):
-        """형태소 분석"""
-        print("2. 형태소 분석 중...")
-        self.df = self.analyzer.tokenize_dataframe(self.df, 'cleaned_review', method)
+        """형태소 분석 - 원본 텍스트 직접 사용"""
+        print("2. 형태소 분석 중... (원본 텍스트 직접 사용)")
+        self.df = self.analyzer.tokenize_dataframe(self.df, self.text_col, method)
     
     def extract_auto_stopwords(self):
         """자동 불용어 추출"""
@@ -110,23 +112,35 @@ class DataDrivenReviewAnalysisSystem:
         )
     
     def analyze_sentiment(self):
-        """데이터 기반 감성 분석"""
-        print("4. 데이터 기반 감성 분석 중...")
+        """데이터 기반 감성 분석 (Transformers 포함)"""
+        print("4. 고급 감성 분석 중...")
         
-        # 평점 기반 감성 분석 (가장 객관적)
         if self.rating_col:
+            # 앙상블 방식: 평점 + Transformers + 학습된 패턴
             self.df = self.sentiment_analyzer.create_sentiment_labels(
-                self.df, method='rating', rating_column=self.rating_col
+                self.df, 
+                method='ensemble',  # 🆕 앙상블 방식
+                tokens_column='tokens',
+                rating_column=self.rating_col,
+                text_column=self.text_col  # 원본 텍스트 (Transformers용)
             )
             
-            # 학습된 패턴도 추출 (분석용)
-            self.learned_patterns = self.sentiment_analyzer.learn_patterns_from_ratings(
-                self.df, 'tokens_str', self.rating_col
-            )
+            # 학습된 패턴도 저장
+            self.learned_patterns = self.sentiment_analyzer.get_learned_patterns()
+            
+            # Transformers vs 평점 기반 비교 분석
+            if hasattr(self.sentiment_analyzer, 'transformers_pipeline') and self.sentiment_analyzer.transformers_pipeline:
+                comparison = self.sentiment_analyzer.compare_sentiment_methods(self.df)
+                self.transformers_comparison = comparison
+            
         else:
-            # 평점이 없는 경우 중립으로 설정
-            self.df['sentiment'] = 'neutral'
-            print("⚠️ 평점이 없어 감성 분석을 건너뜁니다.")
+            # 평점이 없는 경우 Transformers만 사용
+            self.df = self.sentiment_analyzer.create_sentiment_labels(
+                self.df,
+                method='transformers',
+                text_column=self.text_col
+            )
+            print("⚠️ 평점이 없어 Transformers 기반 감성 분석만 수행")
     
     def extract_meaningful_content(self):
         """의미있는 콘텐츠 추출"""
@@ -169,7 +183,7 @@ class DataDrivenReviewAnalysisSystem:
         # 기본 통계
         print(f"📈 데이터 현황:")
         print(f"   총 리뷰 수: {self.initial_count:,}개 → {self.final_count:,}개")
-        print(f"   평균 리뷰 길이: {self.df['cleaned_review'].str.len().mean():.1f}자")
+        print(f"   평균 리뷰 길이: {self.df[self.text_col].str.len().mean():.1f}자")
         print(f"   텍스트 컬럼: {self.text_col}")
         
         if self.rating_col:
@@ -234,7 +248,7 @@ class DataDrivenReviewAnalysisSystem:
             ['분석된 리뷰 수', f"{self.final_count:,}개", ''],
             ['텍스트 컬럼', self.text_col, ''],
             ['평점 컬럼', self.rating_col or '없음', ''],
-            ['평균 리뷰 길이', f"{self.df['cleaned_review'].str.len().mean():.1f}자", '']
+            ['평균 리뷰 길이', f"{self.df[self.text_col].str.len().mean():.1f}자", '']
         ])
         
         if self.rating_col and self.rating_col in self.df.columns:
@@ -324,25 +338,22 @@ class DataDrivenReviewAnalysisSystem:
             if not self.load_and_prepare_data(file_path):
                 return None
             
-            # 2. 전처리
-            self.preprocess_data()
-            
-            # 3. 형태소 분석
+            # 2. 형태소 분석 (전처리 없이 바로)
             self.tokenize_data()
             
-            # 4. 자동 불용어 추출
+            # 3. 자동 불용어 추출
             self.extract_auto_stopwords()
             
-            # 5. 감성 분석
+            # 4. 감성 분석
             self.analyze_sentiment()
             
-            # 6. 의미있는 콘텐츠 추출
+            # 5. 의미있는 콘텐츠 추출
             self.extract_meaningful_content()
             
-            # 7. 리포트 생성
+            # 6. 리포트 생성
             output_file = self.generate_data_driven_report()
             
-            # 8. 요약 출력
+            # 7. 요약 출력
             self.print_analysis_summary()
             
             print(f"\n🎉 데이터 기반 분석 완료!")

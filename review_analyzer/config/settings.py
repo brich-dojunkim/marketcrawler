@@ -1,5 +1,5 @@
 # config/settings.py
-"""설정 파일 - 하드코딩 최소화"""
+"""설정 파일 - 최종 정리"""
 
 import os
 from datetime import datetime
@@ -8,43 +8,7 @@ from datetime import datetime
 DEFAULT_OUTPUT_DIR = '/Users/brich/Desktop/marketcrawler/output'
 DEFAULT_DATA_FILE = 'coupang_reviews_20250701_180647.csv'
 
-# 라이브러리 가용성 체크
-def check_library_availability():
-    """라이브러리 사용 가능 여부 확인"""
-    availability = {
-        'konlpy': False,
-        'pykospacing': False,
-        'transformers': False
-    }
-    
-    # KoNLPy 체크
-    try:
-        from konlpy.tag import Okt
-        availability['konlpy'] = True
-        print("✅ KoNLPy 사용 가능")
-    except Exception as e:
-        print(f"❌ KoNLPy 사용 불가: {e}")
-    
-    # PyKoSpacing 체크
-    try:
-        from pykospacing import Spacing
-        availability['pykospacing'] = True
-        print("✅ PyKoSpacing 사용 가능")
-    except ImportError as e:
-        print(f"❌ PyKoSpacing 사용 불가: {e}")
-    
-    # Transformers 체크
-    try:
-        import torch
-        from transformers import BertTokenizer
-        availability['transformers'] = True
-        print("✅ PyTorch/Transformers 사용 가능")
-    except ImportError:
-        print("❌ PyTorch/Transformers를 설치하지 못했습니다. 규칙 기반 감성 분석을 사용합니다.")
-    
-    return availability
-
-# 한글 폰트 경로 (macOS 기준)
+# 한글 폰트 경로 (시각화용)
 FONT_PATHS = [
     '/System/Library/Fonts/NanumGothic.ttc',
     '/Library/Fonts/NanumGothic.ttf',
@@ -59,16 +23,16 @@ def get_font_path():
             return path
     return None
 
-# 분석 매개변수 - 데이터 기반 접근을 위한 설정
+# 분석 매개변수
 ANALYSIS_PARAMS = {
     'max_tfidf_features': 100,
-    'ngram_range': (1, 3),  # 확장: 3-gram까지
-    'min_word_count': 3,    # 감소: 더 많은 키워드 포함
-    'max_word_length': 15,  # 증가: 복합어 포함
+    'ngram_range': (1, 3),
+    'min_word_count': 3,
+    'max_word_length': 15,
     'n_topics': 5,
-    'auto_stopword_threshold': 0.7,  # 새로운: 자동 불용어 임계값
-    'min_phrase_freq': 3,            # 새로운: 최소 구문 빈도
-    'cluster_method': 'kmeans'       # 새로운: 클러스터링 방법
+    'auto_stopword_threshold': 0.7,
+    'min_phrase_freq': 3,
+    'cluster_method': 'kmeans'
 }
 
 def get_output_filename(prefix="analysis_report"):
