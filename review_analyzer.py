@@ -619,7 +619,7 @@ def run_analysis_with_identified_columns(df, text_col, rating_col=None):
 
 def create_excel_report(analyzer, keywords_tfidf, keywords_krwordrank, topics, 
                        initial_count, final_count, text_col, rating_col):
-    """분석 결과를 엑셀 파일로 저장"""
+    """분석 결과를 하나의 엑셀 시트로 저장"""
     
     # 현재 시간으로 파일명 생성
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -631,33 +631,194 @@ def create_excel_report(analyzer, keywords_tfidf, keywords_krwordrank, topics,
     
     output_file = f"{output_dir}/coupang_analysis_report_{timestamp}.xlsx"
     
-    # ExcelWriter 생성
-    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-        
-        # 1. 요약 정보 시트
-        create_summary_sheet(writer, analyzer, initial_count, final_count, 
-                           text_col, rating_col)
-        
-        # 2. 감성 분석 결과 시트
-        create_sentiment_analysis_sheet(writer, analyzer)
-        
-        # 3. 키워드 분석 시트
-        create_keyword_analysis_sheet(writer, keywords_tfidf, keywords_krwordrank)
-        
-        # 4. 토픽 모델링 시트
-        if topics:
-            create_topic_modeling_sheet(writer, topics)
-        
-        # 5. 감성별 키워드 시트
-        create_sentiment_keywords_sheet(writer, analyzer)
-        
-        # 6. 상세 리뷰 데이터 시트
-        create_detailed_reviews_sheet(writer, analyzer)
-        
-        # 7. 통계 요약 시트
-        create_statistics_sheet(writer, analyzer, rating_col)
+    # 전체 분석 결과를 하나의 데이터프레임으로 구성
+    all_data = []
     
-    print(f"✅ 분석 결과가 엑셀 파일로 저장되었습니다:")
+    # 1. 분석 개요
+    all_data.append(['=== 쿠팡 리뷰 분석 리포트 ===', '', ''])
+    all_data.append(['분석 일시', datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ''])
+    all_data.append(['', '', ''])
+    
+    # 2. 기본 통계
+    all_data.append(['[기본 통계]', '', ''])
+    all_data.append(['총 리뷰 수 (원본)', f"{initial_count:,}개", '처리 전 전체 리뷰 개수'])
+    all_data.append(['분석된 리뷰 수', f"{final_count:,}개", '전처리 후 실제 분석된 리뷰 개수'])
+    all_data.append(['제거된 리뷰 수', f"{initial_count - final_count:,}개", '빈 내용 등으로 제거된 리뷰'])
+    all_data.append(['리뷰 텍스트 컬럼', text_col, '분석에 사용된 리뷰 텍스트 컬럼명'])
+    all_data.append(['평점 컬럼', rating_col if rating_col else '없음', '분석에 사용된 평점 컬럼명'])
+    
+    # 텍스트 통계
+    avg_length = analyzer.df['cleaned_review'].str.len().mean()
+    max_length = analyzer.df['cleaned_review'].str.len().max()
+    min_length = analyzer.df['cleaned_review'].str.len().min()
+    
+    all_data.append(['평균 리뷰 길이', f"{avg_length:.1f}자", '전처리된 리뷰의 평균 글자 수'])
+    all_data.append(['최대 리뷰 길이', f"{max_length}자", '가장 긴 리뷰의 글자 수'])
+    all_data.append(['최소 리뷰 길이', f"{min_length}자", '가장 짧은 리뷰의 글자 수'])
+    
+    # 평점 통계
+    if rating_col and rating_col in analyzer.df.columns:
+        avg_rating = analyzer.df[rating_col].mean()
+        all_data.append(['평균 평점', f"{avg_rating:.2f}", '전체 리뷰의 평균 평점'])
+        
+        # 평점별 분포
+        rating_counts = analyzer.df[rating_col].value_counts().sort_index()
+        for rating, count in rating_counts.items():
+            ratio = count / len(analyzer.df) * 100
+            all_data.append([f"{rating}점 리뷰 수", f"{count}개 ({ratio:.1f}%)", '평점별 리뷰 분포'])
+    
+    all_data.append(['', '', ''])
+    
+    # 3. 감성 분석 결과
+    all_data.append(['[감성 분석 결과]', '', ''])
+    sentiment_counts = analyzer.df['sentiment_rule'].value_counts()
+    
+    for sentiment in ['positive', 'negative', 'neutral']:
+        count = sentiment_counts.get(sentiment, 0)
+        ratio = count / len(analyzer.df) * 100
+        sentiment_kr = {'positive': '긍정', 'negative': '부정', 'neutral': '중립'}[sentiment]
+        all_data.append([f"{sentiment_kr} 리뷰", f"{count:,}개 ({ratio:.1f}%)", '규칙 기반 감성분석 결과'])
+    
+    # 평점 기반 감성 분석 결과 (있는 경우)
+    if 'sentiment_rating' in analyzer.df.columns:
+        all_data.append(['', '', ''])
+        all_data.append(['[평점 기반 감성 분석]', '', ''])
+        sentiment_rating_counts = analyzer.df['sentiment_rating'].value_counts()
+        
+        for sentiment in ['positive', 'negative', 'neutral']:
+            count = sentiment_rating_counts.get(sentiment, 0)
+            ratio = count / len(analyzer.df) * 100
+            sentiment_kr = {'positive': '긍정', 'negative': '부정', 'neutral': '중립'}[sentiment]
+            all_data.append([f"{sentiment_kr} 리뷰", f"{count:,}개 ({ratio:.1f}%)", '평점 기반 감성분석 결과'])
+    
+    all_data.append(['', '', ''])
+    
+    # 4. TF-IDF 키워드 분석
+    all_data.append(['[TF-IDF 키워드 분석 TOP 20]', '', ''])
+    all_data.append(['순위', '키워드', 'TF-IDF 점수'])
+    
+    for i, (word, score) in enumerate(keywords_tfidf[:20], 1):
+        all_data.append([i, word, round(score, 4)])
+    
+    all_data.append(['', '', ''])
+    
+    # 5. KR-WordRank 키워드 분석 (있는 경우)
+    if keywords_krwordrank:
+        all_data.append(['[KR-WordRank 키워드 분석 TOP 20]', '', ''])
+        all_data.append(['순위', '키워드', 'WordRank 점수'])
+        
+        for i, (word, score) in enumerate(keywords_krwordrank[:20], 1):
+            all_data.append([i, word, round(score, 1)])
+        
+        all_data.append(['', '', ''])
+    
+    # 6. 토픽 모델링 결과
+    if topics:
+        all_data.append(['[토픽 모델링 결과]', '', ''])
+        all_data.append(['토픽 번호', '주요 키워드', '설명'])
+        
+        for i, topic_words in enumerate(topics, 1):
+            keywords = ', '.join(topic_words[:8])
+            all_data.append([f"토픽 {i}", keywords, f"토픽 {i}의 주요 키워드들"])
+        
+        all_data.append(['', '', ''])
+    
+    # 7. 감성별 키워드 분석
+    all_data.append(['[감성별 주요 키워드]', '', ''])
+    
+    for sentiment in ['positive', 'negative', 'neutral']:
+        if sentiment in analyzer.df['sentiment_rule'].values:
+            sentiment_data = analyzer.df[analyzer.df['sentiment_rule'] == sentiment]
+            if len(sentiment_data) > 0:
+                sentiment_text = ' '.join(sentiment_data['tokens_str'])
+                vectorizer = TfidfVectorizer(max_features=10, token_pattern=r'\b\w+\b')
+                try:
+                    tfidf_matrix = vectorizer.fit_transform([sentiment_text])
+                    feature_names = vectorizer.get_feature_names_out()
+                    tfidf_scores = tfidf_matrix.toarray()[0]
+                    sentiment_keywords = sorted(zip(feature_names, tfidf_scores), 
+                                              key=lambda x: x[1], reverse=True)
+                    
+                    sentiment_kr = {'positive': '긍정', 'negative': '부정', 'neutral': '중립'}[sentiment]
+                    keywords_str = ', '.join([word for word, score in sentiment_keywords[:8]])
+                    all_data.append([f"{sentiment_kr} 키워드", keywords_str, f"{sentiment_kr} 리뷰의 특징적 키워드"])
+                except:
+                    sentiment_kr = {'positive': '긍정', 'negative': '부정', 'neutral': '중립'}[sentiment]
+                    all_data.append([f"{sentiment_kr} 키워드", '키워드 추출 실패', ''])
+    
+    all_data.append(['', '', ''])
+    
+    # 8. 상세 통계
+    all_data.append(['[상세 통계]', '', ''])
+    
+    # 텍스트 길이 통계
+    length_stats = analyzer.df['cleaned_review'].str.len().describe()
+    all_data.append(['텍스트 길이 평균', f"{length_stats['mean']:.1f}자", ''])
+    all_data.append(['텍스트 길이 표준편차', f"{length_stats['std']:.1f}자", ''])
+    all_data.append(['텍스트 길이 최솟값', f"{length_stats['min']:.0f}자", ''])
+    all_data.append(['텍스트 길이 중간값', f"{length_stats['50%']:.0f}자", ''])
+    all_data.append(['텍스트 길이 최댓값', f"{length_stats['max']:.0f}자", ''])
+    
+    # 키워드 수 통계
+    token_counts = analyzer.df['tokens'].apply(len)
+    token_stats = token_counts.describe()
+    all_data.append(['키워드 수 평균', f"{token_stats['mean']:.1f}개", ''])
+    all_data.append(['키워드 수 중간값', f"{token_stats['50%']:.0f}개", ''])
+    all_data.append(['키워드 수 최댓값', f"{token_stats['max']:.0f}개", ''])
+    
+    all_data.append(['', '', ''])
+    
+    # 9. 샘플 리뷰 데이터 (상위 10개)
+    all_data.append(['[샘플 리뷰 데이터 (상위 10개)]', '', ''])
+    all_data.append(['원본 리뷰', '규칙기반 감성', '추출된 키워드'])
+    
+    sample_df = analyzer.df.head(10)
+    for idx, row in sample_df.iterrows():
+        original_review = str(row[text_col])[:100] + "..." if len(str(row[text_col])) > 100 else str(row[text_col])
+        sentiment = row['sentiment_rule']
+        keywords = row['tokens_str'][:50] + "..." if len(row['tokens_str']) > 50 else row['tokens_str']
+        all_data.append([original_review, sentiment, keywords])
+    
+    # 데이터프레임 생성 및 엑셀 저장
+    df_report = pd.DataFrame(all_data, columns=['항목', '값', '설명/추가정보'])
+    
+    # ExcelWriter로 저장
+    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+        df_report.to_excel(writer, sheet_name='쿠팡_리뷰_분석_리포트', index=False)
+        
+        # 워크시트 스타일링
+        worksheet = writer.sheets['쿠팡_리뷰_분석_리포트']
+        
+        # 컬럼 폭 조정
+        worksheet.column_dimensions['A'].width = 30
+        worksheet.column_dimensions['B'].width = 40
+        worksheet.column_dimensions['C'].width = 60
+        
+        # 헤더 스타일링
+        from openpyxl.styles import Font, PatternFill, Alignment
+        
+        header_font = Font(bold=True, size=12)
+        header_fill = PatternFill(start_color="CCCCCC", end_color="CCCCCC", fill_type="solid")
+        
+        for col in range(1, 4):
+            cell = worksheet.cell(row=1, column=col)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+        
+        # 섹션 헤더 스타일링 (대괄호로 시작하는 행들)
+        section_font = Font(bold=True, size=11, color="0066CC")
+        section_fill = PatternFill(start_color="E6F3FF", end_color="E6F3FF", fill_type="solid")
+        
+        for row in range(2, len(all_data) + 2):
+            cell_value = worksheet.cell(row=row, column=1).value
+            if cell_value and str(cell_value).startswith('[') and str(cell_value).endswith(']'):
+                for col in range(1, 4):
+                    cell = worksheet.cell(row=row, column=col)
+                    cell.font = section_font
+                    cell.fill = section_fill
+    
+    print(f"✅ 분석 결과가 하나의 엑셀 시트로 저장되었습니다:")
     print(f"📁 파일 경로: {output_file}")
     
     return output_file
