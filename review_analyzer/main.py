@@ -1,5 +1,5 @@
 # main.py
-"""메인 실행 모듈"""
+"""메인 실행 모듈 - 데이터 기반 분석"""
 
 import warnings
 import sys
@@ -12,18 +12,17 @@ if current_dir not in sys.path:
 
 warnings.filterwarnings('ignore')
 
-from utils.data_loader import load_csv_data, identify_columns, select_columns, validate_data
+from utils.data_loader import load_csv_data, identify_columns, validate_data
 from core.preprocessor import TextPreprocessor
 from core.analyzer import MorphologicalAnalyzer
 from core.sentiment import SentimentAnalyzer
 from keywords.extractor import KeywordExtractor
 from keywords.topic_modeling import TopicModeling
-from visualization.charts import Visualizer
 from output.excel_exporter import ExcelExporter
 from config.settings import DEFAULT_DATA_FILE, DEFAULT_OUTPUT_DIR, ANALYSIS_PARAMS
 
-class ReviewAnalysisSystem:
-    """리뷰 분석 시스템 통합 클래스"""
+class DataDrivenReviewAnalysisSystem:
+    """데이터 기반 리뷰 분석 시스템"""
     
     def __init__(self, output_dir=None):
         """
@@ -37,31 +36,22 @@ class ReviewAnalysisSystem:
         self.sentiment_analyzer = SentimentAnalyzer()
         self.keyword_extractor = KeywordExtractor()
         self.topic_modeling = TopicModeling()
-        self.visualizer = Visualizer()
         self.excel_exporter = ExcelExporter(output_dir)
         
         # 분석 결과 저장
         self.df = None
         self.text_col = None
         self.rating_col = None
-        self.keywords_tfidf = None
-        self.keywords_krwordrank = None
-        self.topics = None
+        self.meaningful_phrases = None
+        self.cluster_topics = None
         self.sentiment_keywords = None
+        self.learned_patterns = None
         self.initial_count = 0
         self.final_count = 0
     
     def load_and_prepare_data(self, file_path):
-        """
-        데이터 로딩 및 준비
-        
-        Args:
-            file_path: CSV 파일 경로
-            
-        Returns:
-            성공 여부
-        """
-        print("🚀 쿠팡 리뷰 분석 시스템 시작")
+        """데이터 로딩 및 준비"""
+        print("🚀 데이터 기반 리뷰 분석 시스템")
         print("=" * 50)
         
         # 데이터 로딩
@@ -73,20 +63,36 @@ class ReviewAnalysisSystem:
         
         # 컬럼 분석 및 선택
         text_columns, rating_columns = identify_columns(self.df)
-        self.text_col, self.rating_col = select_columns(text_columns, rating_columns)
+        
+        # body 컬럼 우선 선택 (더 풍부한 내용)
+        if 'body' in text_columns:
+            self.text_col = 'body'
+            print("📝 텍스트 컬럼: 'body' (상세 내용 우선 선택)")
+        elif text_columns:
+            self.text_col = text_columns[0]
+            print(f"📝 텍스트 컬럼: '{self.text_col}'")
+        else:
+            print("❌ 텍스트 컬럼을 찾을 수 없습니다.")
+            return False
+        
+        self.rating_col = rating_columns[0] if rating_columns else None
+        if self.rating_col:
+            print(f"⭐ 평점 컬럼: '{self.rating_col}'")
+        else:
+            print("⚠️ 평점 컬럼 없음 (텍스트 기반 분석만 수행)")
         
         # 데이터 유효성 검증
         if not validate_data(self.df, self.text_col, self.rating_col):
             return False
         
-        print("\n🔄 분석 시작...")
+        print("\n🔄 데이터 기반 분석 시작...")
         print("=" * 50)
         
         return True
     
     def preprocess_data(self):
-        """데이터 전처리"""
-        print("1. 텍스트 전처리 중...")
+        """최소한의 데이터 전처리"""
+        print("1. 기본 텍스트 정리 중...")
         self.df = self.preprocessor.clean_dataframe(self.df, self.text_col)
         self.final_count = len(self.df)
     
@@ -95,152 +101,224 @@ class ReviewAnalysisSystem:
         print("2. 형태소 분석 중...")
         self.df = self.analyzer.tokenize_dataframe(self.df, 'cleaned_review', method)
     
-    def analyze_sentiment(self):
-        """감성 분석"""
-        print("3. 감성 분석 중...")
-        
-        # 규칙 기반 감성 분석
-        self.df = self.sentiment_analyzer.create_sentiment_labels(
-            self.df, method='rule', tokens_column='tokens'
+    def extract_auto_stopwords(self):
+        """자동 불용어 추출"""
+        print("3. 자동 불용어 추출 중...")
+        texts = self.df['tokens_str'].tolist()
+        self.keyword_extractor.extract_auto_stopwords(
+            texts, ANALYSIS_PARAMS['auto_stopword_threshold']
         )
-        self.df = self.df.rename(columns={'sentiment': 'sentiment_rule'})
+    
+    def analyze_sentiment(self):
+        """데이터 기반 감성 분석"""
+        print("4. 데이터 기반 감성 분석 중...")
         
-        # 평점 기반 감성 분석 (평점 컬럼이 있는 경우)
+        # 평점 기반 감성 분석 (가장 객관적)
         if self.rating_col:
-            sentiment_rating_df = self.sentiment_analyzer.create_sentiment_labels(
+            self.df = self.sentiment_analyzer.create_sentiment_labels(
                 self.df, method='rating', rating_column=self.rating_col
             )
-            self.df['sentiment_rating'] = sentiment_rating_df['sentiment']
-    
-    def extract_keywords(self):
-        """키워드 추출"""
-        print("4. 키워드 추출 중...")
-        
-        # TF-IDF 키워드 추출
-        self.keywords_tfidf = self.keyword_extractor.extract_keywords_tfidf(
-            self.df, max_features=ANALYSIS_PARAMS['max_tfidf_features'],
-            ngram_range=ANALYSIS_PARAMS['ngram_range']
-        )
-        
-        # KR-WordRank 키워드 추출
-        try:
-            self.keywords_krwordrank = self.keyword_extractor.extract_keywords_krwordrank(
-                self.df, min_count=ANALYSIS_PARAMS['min_word_count']
-            )
-        except Exception as e:
-            print(f"KR-WordRank 키워드 추출 실패: {e}")
-            self.keywords_krwordrank = None
-        
-        # 감성별 키워드 추출
-        self.sentiment_keywords = self.keyword_extractor.extract_sentiment_keywords(
-            self.df, sentiment_column='sentiment_rule'
-        )
-    
-    def perform_topic_modeling(self):
-        """토픽 모델링"""
-        print("5. 토픽 모델링 중...")
-        
-        try:
-            self.topics = self.topic_modeling.lda_topic_modeling(
-                self.df, n_topics=ANALYSIS_PARAMS['n_topics'],
-                max_features=ANALYSIS_PARAMS['max_tfidf_features']
-            )
-        except Exception as e:
-            print(f"토픽 모델링 실패: {e}")
-            self.topics = None
-    
-    def generate_reports(self, report_type='comprehensive'):
-        """
-        분석 결과 리포트 생성
-        
-        Args:
-            report_type: 리포트 타입 ('comprehensive' 또는 'detailed')
             
-        Returns:
-            출력 파일 경로
-        """
-        print("6. 분석 결과 출력 중...")
-        
-        if report_type == 'comprehensive':
-            output_file = self.excel_exporter.create_comprehensive_report(
-                self.df, self.keywords_tfidf, self.keywords_krwordrank,
-                self.topics, self.sentiment_keywords,
-                self.initial_count, self.final_count,
-                self.text_col, self.rating_col
-            )
-        elif report_type == 'detailed':
-            output_file = self.excel_exporter.create_detailed_report(
-                self.df, self.keywords_tfidf, self.keywords_krwordrank,
-                self.topics, self.sentiment_keywords,
-                self.initial_count, self.final_count,
-                self.text_col, self.rating_col
+            # 학습된 패턴도 추출 (분석용)
+            self.learned_patterns = self.sentiment_analyzer.learn_patterns_from_ratings(
+                self.df, 'tokens_str', self.rating_col
             )
         else:
-            raise ValueError(f"Unsupported report type: {report_type}")
+            # 평점이 없는 경우 중립으로 설정
+            self.df['sentiment'] = 'neutral'
+            print("⚠️ 평점이 없어 감성 분석을 건너뜁니다.")
+    
+    def extract_meaningful_content(self):
+        """의미있는 콘텐츠 추출"""
+        print("5. 의미있는 콘텐츠 추출 중...")
+        
+        texts = self.df['tokens_str'].tolist()
+        
+        # 의미있는 구문 추출 (N-gram 기반)
+        self.meaningful_phrases = self.keyword_extractor.extract_meaningful_phrases(
+            texts, 
+            min_freq=ANALYSIS_PARAMS['min_phrase_freq'],
+            max_ngram=ANALYSIS_PARAMS['ngram_range'][1]
+        )
+        
+        # 클러스터 기반 토픽 추출
+        self.cluster_topics, self.df = self.keyword_extractor.cluster_based_topics(
+            self.df, 'tokens_str', ANALYSIS_PARAMS['n_topics']
+        )
+        
+        # 감성별 특징 키워드
+        self.sentiment_keywords = self.keyword_extractor.extract_sentiment_keywords(
+            self.df, 'sentiment', 'tokens_str'
+        )
+    
+    def generate_data_driven_report(self):
+        """데이터 기반 리포트 생성"""
+        print("6. 데이터 기반 결과 출력 중...")
+        
+        # 엑셀 리포트 생성
+        output_file = self.create_comprehensive_excel_report()
         
         return output_file
     
-    def print_summary(self):
+    def print_analysis_summary(self):
         """분석 결과 요약 출력"""
         print("\n" + "=" * 50)
-        print("📊 분석 결과 요약")
+        print("📊 데이터 기반 분석 결과 요약")
         print("=" * 50)
         
-        print(f"총 리뷰 수: {self.initial_count:,}개 → {self.final_count:,}개")
-        print(f"평균 리뷰 길이: {self.df['cleaned_review'].str.len().mean():.1f}자")
+        # 기본 통계
+        print(f"📈 데이터 현황:")
+        print(f"   총 리뷰 수: {self.initial_count:,}개 → {self.final_count:,}개")
+        print(f"   평균 리뷰 길이: {self.df['cleaned_review'].str.len().mean():.1f}자")
+        print(f"   텍스트 컬럼: {self.text_col}")
         
         if self.rating_col:
-            print(f"평균 평점: {self.df[self.rating_col].mean():.2f}")
+            print(f"   평균 평점: {self.df[self.rating_col].mean():.2f}")
         
-        # 감성 분석 결과
-        sentiment_counts = self.df['sentiment_rule'].value_counts()
-        print("\n감성 분석 결과:")
-        for sentiment, count in sentiment_counts.items():
-            ratio = count / len(self.df) * 100
-            sentiment_kr = {'positive': '긍정', 'negative': '부정', 'neutral': '중립'}[sentiment]
-            print(f"  {sentiment_kr}: {count:,}개 ({ratio:.1f}%)")
-        
-        # 주요 키워드
-        print("\n주요 키워드 (TF-IDF TOP 10):")
-        for i, (word, score) in enumerate(self.keywords_tfidf[:10], 1):
-            print(f"  {i:2d}. {word} ({score:.3f})")
-        
-        print("=" * 50)
-    
-    def create_visualizations(self):
-        """시각화 생성"""
-        print("7. 시각화 생성 중...")
+        # 자동 추출 결과
+        print(f"\n🤖 자동 추출 결과:")
+        print(f"   자동 불용어: {len(self.keyword_extractor.auto_stopwords)}개")
+        if self.learned_patterns:
+            print(f"   학습된 감성 패턴: 긍정 {len(self.learned_patterns.get('positive', []))}개, "
+                  f"부정 {len(self.learned_patterns.get('negative', []))}개")
+        print(f"   의미구문: {len(self.meaningful_phrases)}개")
+        print(f"   토픽 클러스터: {len(self.cluster_topics)}개")
         
         # 감성 분포
-        self.visualizer.plot_sentiment_distribution(self.df, 'sentiment_rule', self.rating_col)
+        if 'sentiment' in self.df.columns:
+            sentiment_counts = self.df['sentiment'].value_counts()
+            print(f"\n💭 감성 분포 (평점 기반):")
+            for sentiment, count in sentiment_counts.items():
+                ratio = count / len(self.df) * 100
+                sentiment_kr = {'positive': '긍정', 'negative': '부정', 'neutral': '중립'}[sentiment]
+                print(f"   {sentiment_kr}: {count:,}개 ({ratio:.1f}%)")
         
-        # 워드클라우드
-        self.visualizer.create_wordcloud(self.df)
+        # 주요 의미구문
+        print(f"\n🎯 주요 의미구문 TOP 10:")
+        for i, (phrase, score) in enumerate(self.meaningful_phrases[:10], 1):
+            print(f"   {i:2d}. {phrase} ({score:.1f})")
         
-        # 키워드 랭킹
-        if self.keywords_tfidf:
-            self.visualizer.plot_keyword_ranking(self.keywords_tfidf, 'TF-IDF 키워드 랭킹')
+        # 토픽 클러스터
+        print(f"\n📋 토픽 클러스터:")
+        for topic_name, topic_info in self.cluster_topics.items():
+            keywords = ', '.join(topic_info['keywords'][:5])
+            print(f"   {topic_name} ({topic_info['ratio']:.1%}): {keywords}")
         
-        # 평점별 감성 분포 (평점이 있는 경우)
-        if self.rating_col:
-            self.visualizer.plot_sentiment_by_rating(self.df, self.rating_col, 'sentiment_rule')
-        
-        # 토픽 분포 (토픽이 있는 경우)
-        if self.topics:
-            self.visualizer.plot_topic_distribution(self.topics)
+        print("=" * 50)
     
-    def run_full_analysis(self, file_path, report_type='comprehensive', create_viz=False):
-        """
-        전체 분석 파이프라인 실행
+    def create_comprehensive_excel_report(self):
+        """종합 엑셀 리포트 생성"""
+        from datetime import datetime
+        import pandas as pd
         
-        Args:
-            file_path: 입력 CSV 파일 경로
-            report_type: 리포트 타입 ('comprehensive' 또는 'detailed')
-            create_viz: 시각화 생성 여부
+        output_file = os.path.join(
+            self.excel_exporter.output_dir, 
+            f"data_driven_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        )
+        
+        # 리포트 데이터 구성
+        report_data = []
+        
+        # 분석 개요
+        report_data.extend([
+            ['=== 데이터 기반 리뷰 분석 리포트 ===', '', ''],
+            ['분석 방식', '데이터 기반 (하드코딩 최소화)', '평점 기반 감성분석, 자동 불용어, 의미구문 추출'],
+            ['분석 일시', datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ''],
+            ['', '', '']
+        ])
+        
+        # 기본 통계
+        report_data.extend([
+            ['[기본 통계]', '', ''],
+            ['총 리뷰 수 (원본)', f"{self.initial_count:,}개", ''],
+            ['분석된 리뷰 수', f"{self.final_count:,}개", ''],
+            ['텍스트 컬럼', self.text_col, ''],
+            ['평점 컬럼', self.rating_col or '없음', ''],
+            ['평균 리뷰 길이', f"{self.df['cleaned_review'].str.len().mean():.1f}자", '']
+        ])
+        
+        if self.rating_col and self.rating_col in self.df.columns:
+            report_data.append(['평균 평점', f"{self.df[self.rating_col].mean():.2f}", ''])
+        
+        report_data.append(['', '', ''])
+        
+        # 자동 추출 현황
+        report_data.extend([
+            ['[자동 추출 현황]', '', ''],
+            ['자동 불용어 수', f"{len(self.keyword_extractor.auto_stopwords)}개", '문서 빈도 70% 이상'],
+            ['의미구문 수', f"{len(self.meaningful_phrases)}개", 'N-gram 기반 자동 추출'],
+            ['토픽 클러스터 수', f"{len(self.cluster_topics)}개", 'K-means 클러스터링'],
+        ])
+        
+        if self.learned_patterns:
+            pos_count = len(self.learned_patterns.get('positive', []))
+            neg_count = len(self.learned_patterns.get('negative', []))
+            report_data.append(['학습된 감성 패턴', f"긍정 {pos_count}개, 부정 {neg_count}개", '평점 4+ vs 2- 기반 학습'])
+        
+        report_data.append(['', '', ''])
+        
+        # 감성 분석 결과
+        if 'sentiment' in self.df.columns:
+            sentiment_counts = self.df['sentiment'].value_counts()
+            report_data.extend([
+                ['[감성 분석 결과]', '', ''],
+                ['긍정 리뷰', f"{sentiment_counts.get('positive', 0):,}개 ({sentiment_counts.get('positive', 0)/len(self.df)*100:.1f}%)", '평점 기반'],
+                ['부정 리뷰', f"{sentiment_counts.get('negative', 0):,}개 ({sentiment_counts.get('negative', 0)/len(self.df)*100:.1f}%)", '평점 기반'],
+                ['중립 리뷰', f"{sentiment_counts.get('neutral', 0):,}개 ({sentiment_counts.get('neutral', 0)/len(self.df)*100:.1f}%)", '평점 기반'],
+                ['', '', '']
+            ])
+        
+        # 주요 의미구문
+        report_data.extend([
+            ['[주요 의미구문 TOP 20]', '', ''],
+            ['순위', '의미구문', '점수']
+        ])
+        
+        for i, (phrase, score) in enumerate(self.meaningful_phrases[:20], 1):
+            report_data.append([i, phrase, round(score, 2)])
+        
+        report_data.append(['', '', ''])
+        
+        # 토픽 클러스터
+        report_data.extend([
+            ['[토픽 클러스터 분석]', '', ''],
+            ['토픽', '주요 키워드', '문서 수 (비율)']
+        ])
+        
+        for topic_name, topic_info in self.cluster_topics.items():
+            keywords = ', '.join(topic_info['keywords'][:8])
+            size_info = f"{topic_info['size']}개 ({topic_info['ratio']:.1%})"
+            report_data.append([topic_name, keywords, size_info])
+        
+        report_data.append(['', '', ''])
+        
+        # 감성별 특징 키워드
+        if self.sentiment_keywords:
+            report_data.extend([
+                ['[감성별 특징 키워드]', '', ''],
+                ['감성', '특징 키워드', '설명']
+            ])
             
-        Returns:
-            출력 파일 경로
-        """
+            for sentiment in ['positive', 'negative', 'neutral']:
+                if sentiment in self.sentiment_keywords and self.sentiment_keywords[sentiment]:
+                    keywords = ', '.join([word for word, score in self.sentiment_keywords[sentiment][:10]])
+                    sentiment_kr = {'positive': '긍정', 'negative': '부정', 'neutral': '중립'}[sentiment]
+                    report_data.append([sentiment_kr, keywords, f'{sentiment_kr} 리뷰의 특징적 표현'])
+        
+        # Excel 파일 생성
+        df_report = pd.DataFrame(report_data, columns=['항목', '값', '설명'])
+        
+        with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+            df_report.to_excel(writer, sheet_name='데이터기반_분석_리포트', index=False)
+            self.excel_exporter._style_worksheet(writer.sheets['데이터기반_분석_리포트'], report_data)
+        
+        print(f"✅ 데이터 기반 분석 리포트 저장:")
+        print(f"📁 파일 경로: {output_file}")
+        
+        return output_file
+    
+    def run_full_analysis(self, file_path):
+        """전체 데이터 기반 분석 파이프라인 실행"""
         try:
             # 1. 데이터 준비
             if not self.load_and_prepare_data(file_path):
@@ -252,26 +330,22 @@ class ReviewAnalysisSystem:
             # 3. 형태소 분석
             self.tokenize_data()
             
-            # 4. 감성 분석
+            # 4. 자동 불용어 추출
+            self.extract_auto_stopwords()
+            
+            # 5. 감성 분석
             self.analyze_sentiment()
             
-            # 5. 키워드 추출
-            self.extract_keywords()
-            
-            # 6. 토픽 모델링
-            self.perform_topic_modeling()
+            # 6. 의미있는 콘텐츠 추출
+            self.extract_meaningful_content()
             
             # 7. 리포트 생성
-            output_file = self.generate_reports(report_type)
+            output_file = self.generate_data_driven_report()
             
-            # 8. 시각화 (선택사항)
-            if create_viz:
-                self.create_visualizations()
+            # 8. 요약 출력
+            self.print_analysis_summary()
             
-            # 9. 요약 출력
-            self.print_summary()
-            
-            print(f"\n🎉 분석 완료!")
+            print(f"\n🎉 데이터 기반 분석 완료!")
             print(f"📄 결과 파일: {output_file}")
             
             return output_file
@@ -282,56 +356,21 @@ class ReviewAnalysisSystem:
             traceback.print_exc()
             return None
 
+
 def main():
     """메인 실행 함수"""
     # 설정
     file_path = f'{DEFAULT_OUTPUT_DIR}/{DEFAULT_DATA_FILE}'
     output_dir = DEFAULT_OUTPUT_DIR
     
-    # 분석 시스템 초기화
-    system = ReviewAnalysisSystem(output_dir)
+    # 데이터 기반 분석 시스템 초기화
+    system = DataDrivenReviewAnalysisSystem(output_dir)
     
     # 전체 분석 실행
-    output_file = system.run_full_analysis(
-        file_path=file_path,
-        report_type='comprehensive',  # 'comprehensive' 또는 'detailed'
-        create_viz=False  # 시각화 생성 여부
-    )
+    output_file = system.run_full_analysis(file_path)
     
     return output_file
 
-def run_with_custom_file(file_path, output_dir=None, report_type='comprehensive'):
-    """
-    사용자 정의 파일로 분석 실행
-    
-    Args:
-        file_path: 입력 CSV 파일 경로
-        output_dir: 출력 디렉토리 (None인 경우 기본값 사용)
-        report_type: 리포트 타입 ('comprehensive' 또는 'detailed')
-        
-    Returns:
-        출력 파일 경로
-    """
-    system = ReviewAnalysisSystem(output_dir)
-    return system.run_full_analysis(file_path, report_type)
-
-def analyze_with_visualization(file_path, output_dir=None):
-    """
-    시각화 포함 분석 실행
-    
-    Args:
-        file_path: 입력 CSV 파일 경로
-        output_dir: 출력 디렉토리
-        
-    Returns:
-        출력 파일 경로
-    """
-    system = ReviewAnalysisSystem(output_dir)
-    return system.run_full_analysis(
-        file_path=file_path,
-        report_type='comprehensive',
-        create_viz=True
-    )
 
 if __name__ == "__main__":
     main()
