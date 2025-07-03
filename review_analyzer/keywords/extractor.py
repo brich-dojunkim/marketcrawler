@@ -145,7 +145,7 @@ class KeywordExtractor:
             for i in range(n_clusters):
                 center = kmeans.cluster_centers_[i]
                 top_indices = center.argsort()[-10:][::-1]
-                top_keywords = [feature_names[idx] for idx in top_indices]
+                top_keywords = [feature_names[idx] for idx in top_indices[:5]]
                 
                 cluster_size = sum(cluster_labels == i)
                 ratio = cluster_size / len(texts)

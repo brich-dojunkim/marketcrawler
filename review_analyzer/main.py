@@ -82,6 +82,8 @@ class DataDrivenReviewAnalysisSystem:
         if not validate_data(self.df, self.text_col, self.rating_col):
             return False
         
+        self.final_count = len(self.df)
+        
         print("\n🔄 데이터 기반 분석 시작...")
         print("=" * 50)
         
@@ -259,7 +261,7 @@ class DataDrivenReviewAnalysisSystem:
         # 자동 추출 현황
         report_data.extend([
             ['[자동 추출 현황]', '', ''],
-            ['자동 불용어 수', f"{len(self.keyword_extractor.auto_stopwords)}개", '문서 빈도 70% 이상'],
+            ['자동 불용어 수', f"{len(self.keyword_extractor.auto_stopwords)}개", '문서 빈도 50% 이상'],
             ['의미구문 수', f"{len(self.meaningful_phrases)}개", 'N-gram 기반 자동 추출'],
             ['토픽 클러스터 수', f"{len(self.cluster_topics)}개", 'K-means 클러스터링'],
         ])

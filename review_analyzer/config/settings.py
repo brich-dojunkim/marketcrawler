@@ -6,7 +6,7 @@ from datetime import datetime
 
 # 기본 설정
 DEFAULT_OUTPUT_DIR = '/Users/brich/Desktop/marketcrawler/output'
-DEFAULT_DATA_FILE = 'coupang_reviews_20250701_180647.csv'
+DEFAULT_DATA_FILE = 'coupang_reviews_20250701_184246.csv'
 
 # 한글 폰트 경로 (시각화용)
 FONT_PATHS = [
@@ -30,7 +30,7 @@ ANALYSIS_PARAMS = {
     'min_word_count': 3,
     'max_word_length': 15,
     'n_topics': 5,
-    'auto_stopword_threshold': 0.7,
+    'auto_stopword_threshold': 0.5,
     'min_phrase_freq': 3,
     'cluster_method': 'kmeans'
 }

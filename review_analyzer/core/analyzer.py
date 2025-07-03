@@ -18,7 +18,7 @@ class MorphologicalAnalyzer:
         self.okt = Okt()
         print("✅ 형태소 분석기 초기화 완료 (Kiwi + KoNLPy)")
     
-    def tokenize_with_kiwi(self, text: str, pos_filter: List[str] = ['NNG', 'NNP', 'VA', 'VV']) -> List[str]:
+    def tokenize_with_kiwi(self, text: str, pos_filter: List[str] = ['NNG', 'NNP']) -> List[str]:
         """Kiwi를 이용한 형태소 분석"""
         if not text:
             return []
