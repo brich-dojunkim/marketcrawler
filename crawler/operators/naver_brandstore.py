@@ -244,19 +244,76 @@ class NaverBrandStoreCrawler:
         except Exception as e:
             logging.error(f"정렬 옵션 클릭 실패: {e}")
 
+
     def _navigate_to_page(self, page_num: int) -> bool:
-        """특정 페이지로 이동"""
+        """개선된 페이지네이션 처리"""
+        if page_num == 1:
+            return True
+            
         try:
-            # 페이지네이션에서 해당 페이지 번호 클릭
-            page_links = self.driver.find_elements(By.CSS_SELECTOR, "a.UWN4IvaQza")
+            max_attempts = 5  # 최대 시도 횟수
+            current_attempt = 0
             
-            for link in page_links:
-                if link.text.strip() == str(page_num):
-                    link.click()
-                    time.sleep(2)  # 페이지 로딩 대기
-                    return True
+            while current_attempt < max_attempts:
+                current_attempt += 1
+                
+                # 현재 페이지네이션 상태 확인
+                pagination = self.driver.find_element(By.CSS_SELECTOR, "div._1HJarNZHiI")
+                page_links = pagination.find_elements(By.CSS_SELECTOR, "a.UWN4IvaQza")
+                
+                # 현재 표시된 페이지 번호들 확인
+                visible_pages = [int(link.text.strip()) for link in page_links if link.text.strip().isdigit()]
+                logging.debug(f"현재 표시된 페이지: {visible_pages}")
+                
+                # 목표 페이지가 표시되어 있는지 확인
+                if page_num in visible_pages:
+                    for link in page_links:
+                        if link.text.strip() == str(page_num):
+                            link.click()
+                            time.sleep(2)
+                            logging.info(f"페이지 {page_num}로 이동 완료")
+                            return True
+                
+                # 목표 페이지가 현재 범위보다 크면 "다음" 버튼 클릭
+                if visible_pages and page_num > max(visible_pages):
+                    next_buttons = pagination.find_elements(By.CSS_SELECTOR, "a.fAUKm1ewwo._2Ar8-aEUTq")
+                    next_available = False
+                    
+                    for btn in next_buttons:
+                        if (btn.get_attribute("aria-hidden") != "true" and 
+                            "다음" in btn.text):
+                            logging.info(f"페이지 {page_num}을 찾기 위해 '다음' 버튼 클릭 (시도 {current_attempt})")
+                            btn.click()
+                            time.sleep(2)
+                            next_available = True
+                            break
+                    
+                    if not next_available:
+                        logging.warning(f"더 이상 진행할 수 없습니다. 페이지 {page_num}는 존재하지 않을 수 있습니다.")
+                        return False
+                        
+                # 목표 페이지가 현재 범위보다 작으면 "이전" 버튼 클릭
+                elif visible_pages and page_num < min(visible_pages):
+                    prev_buttons = pagination.find_elements(By.CSS_SELECTOR, "a.fAUKm1ewwo._2PB8-gs2tG")
+                    prev_available = False
+                    
+                    for btn in prev_buttons:
+                        if (btn.get_attribute("aria-hidden") != "true" and 
+                            "이전" in btn.text):
+                            logging.info(f"페이지 {page_num}을 찾기 위해 '이전' 버튼 클릭 (시도 {current_attempt})")
+                            btn.click()
+                            time.sleep(2)
+                            prev_available = True
+                            break
+                    
+                    if not prev_available:
+                        logging.warning(f"더 이상 뒤로 갈 수 없습니다. 페이지 {page_num}는 존재하지 않을 수 있습니다.")
+                        return False
+                else:
+                    logging.warning(f"페이지 {page_num}을 찾을 수 없습니다.")
+                    return False
             
-            logging.warning(f"페이지 {page_num}을 찾지 못했습니다.")
+            logging.error(f"최대 시도 횟수 초과: 페이지 {page_num}")
             return False
             
         except Exception as e:
