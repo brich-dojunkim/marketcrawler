@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""쿠팡 상품-리뷰 크롤러 (2025-07 리뉴얼 + 오류-복구 & 부분 저장 v4)"""
+"""쿠팡 상품‑리뷰 크롤러 v5  (2025‑07‑22)
+   • alert 차단(_safe_page_source)
+   • 스텔스 Chrome 프로필 & 랜덤 UA
+   • 페이지·상품 간 지연으로 트래픽 페이스 완화
+"""
 
 from __future__ import annotations
 
@@ -7,10 +11,11 @@ import argparse
 import logging
 import os
 import pathlib
+import random
 import sys
 import time
 from dataclasses import asdict, dataclass
-from typing import List
+from typing import List, Optional
 
 import pandas as pd
 import undetected_chromedriver as uc
@@ -19,6 +24,7 @@ from selenium.common.exceptions import (
     ElementClickInterceptedException,
     StaleElementReferenceException,
     TimeoutException,
+    UnexpectedAlertPresentException,
 )
 from selenium.webdriver import ChromeOptions
 from selenium.webdriver.common.by import By
@@ -43,11 +49,11 @@ class Review:
     user: str
     headline: str
     body: str
-    helpful_count: int | None
+    helpful_count: Optional[int]
     images: str
 
 
-def _safe_int(text: str) -> int | None:
+def _safe_int(text: str) -> Optional[int]:
     try:
         return int(text.replace(",", "").strip())
     except Exception:
@@ -74,10 +80,10 @@ def parse_reviews(html: str, page: int, start_rank: int = 1) -> List[Review]:
             )
             else ""
         )
-        user = (
-            art.select_one(".sdp-review__article__list__info__user__name")
-            or art.select_one(".js_reviewUserProfileImage")
-        ).get_text(strip=True)
+        user_tag = art.select_one(
+            ".sdp-review__article__list__info__user__name, .js_reviewUserProfileImage"
+        )
+        user = user_tag.get_text(strip=True) if user_tag else ""
         headline_tag = art.select_one(
             ".sdp-review__article__list__headline, "
             ".sdp-review__article__list__review__content"
@@ -110,14 +116,52 @@ def parse_reviews(html: str, page: int, start_rank: int = 1) -> List[Review]:
 
 
 ###############################################################################
+# 크롬 초기화 (스텔스)
+###############################################################################
+
+# ───── coupang_review.py  /  _init_driver() 수정본 ─────
+def _init_driver(headless: int):
+    opt = ChromeOptions()
+
+    # ❶ 창/헤드리스
+    if headless:
+        opt.add_argument("--headless=new")
+
+    # ❷ 충돌 줄이는 공통 플래그
+    opt.add_argument("--lang=ko-KR")
+    opt.add_argument("--no-sandbox")
+    opt.add_argument("--disable-dev-shm-usage")
+    opt.add_argument("--disable-gpu")
+    opt.add_argument("--disable-software-rasterizer")
+    opt.add_argument("--disable-extensions")
+    opt.add_argument("--disable-blink-features=AutomationControlled")
+    opt.add_argument("--remote-debugging-port=0")   # 임의 포트 자동 할당
+
+    # ❸ 랜덤 UA (fake_useragent)
+    from fake_useragent import UserAgent
+    opt.add_argument(f"--user-agent={UserAgent().random}")
+
+    # ※ user‑data‑dir 주석 처리 → 실행 충돌 최소화
+    # profile_dir = os.path.expanduser("~/Library/Application Support/Google/Chrome")
+    # opt.add_argument(f"--user-data-dir={profile_dir}")
+
+    # ❹ 버전 자동 감지  ←  version_main 파라미터 **삭제**
+    drv = uc.Chrome(options=opt, headless=headless)
+
+    # webdriver 흔적 제거
+    drv.execute_cdp_cmd(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {"source": "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"},
+    )
+    drv.set_window_size(1200, 960)
+    return drv
+
+###############################################################################
 # 크롤러
 ###############################################################################
 
 
 class CoupangReviewCrawler:
-    # ------------------------------------------------------------------ #
-    # init
-    # ------------------------------------------------------------------ #
     def __init__(
         self,
         url: str,
@@ -130,45 +174,29 @@ class CoupangReviewCrawler:
         self.pages = pages
         self.fmt = fmt.lower()
         self.outdir = pathlib.Path(outdir)
-        self.driver = self._init_driver(headless)
+        self.driver = _init_driver(headless)
 
-    @staticmethod
-    def _init_driver(headless: int):
-        opt = ChromeOptions()
-        if headless:
-            opt.add_argument("--headless=new")
-        opt.add_argument("--lang=ko-KR")
-        opt.add_argument("--disable-gpu")
-        opt.add_argument("--no-sandbox")
-        drv = uc.Chrome(options=opt, headless=headless)
-        drv.set_window_size(1200, 960)
-        return drv
-
+    # ---------------------- low‑level helpers ---------------------- #
     def _close(self):
         try:
             self.driver.quit()
         except Exception:
             pass
 
-    # ------------------------------------------------------------------ #
-    # helpers
-    # ------------------------------------------------------------------ #
     def _safe_click(self, elem, max_try: int = 3):
         for _ in range(max_try):
             try:
                 elem.click()
                 return
-            except ElementClickInterceptedException:
+            except (ElementClickInterceptedException, StaleElementReferenceException):
+                self.driver.execute_script("window.scrollBy(0, 40);")
+                time.sleep(0.3)
                 try:
                     self.driver.execute_script("arguments[0].click();", elem)
                     return
                 except Exception:
                     pass
-            except StaleElementReferenceException:
-                pass
-            self.driver.execute_script("window.scrollBy(0, 20);")
-            time.sleep(0.3)
-        raise RuntimeError("요소 클릭 실패(가림/인터셉트)")
+        raise RuntimeError("요소 클릭 실패")
 
     def _scroll_until(self, css, max_try=30, pause=0.6):
         for _ in range(max_try):
@@ -180,6 +208,22 @@ class CoupangReviewCrawler:
             time.sleep(pause)
         return False
 
+    def _safe_page_source(self) -> str | None:
+        """Unexpected alert 를 처리하고 HTML 을 반환한다."""
+        try:
+            return self.driver.page_source
+        except UnexpectedAlertPresentException:
+            try:
+                alert = self.driver.switch_to.alert
+                logger.warning("⚠️ 쿠팡 alert: %s – 수락 후 재시도", alert.text[:60])
+                alert.accept()
+                time.sleep(2)
+                return self.driver.page_source
+            except Exception as e:
+                logger.error("alert 처리 실패: %s", e)
+                return None
+
+    # ---------------------- review section ------------------------- #
     def _open_review_section(self):
         self.driver.get(self.url)
         if not self._scroll_until(".sdp-review"):
@@ -194,9 +238,7 @@ class CoupangReviewCrawler:
             )
         )
 
-    # ------------------------------------------------------------------ #
-    # pagination
-    # ------------------------------------------------------------------ #
+    # ---------------------- pagination ----------------------------- #
     def _ensure_page_button_visible(self, page: int):
         btn_css = f".js_reviewArticlePageBtn[data-page='{page}']"
         pag_wrap = self.driver.find_element(
@@ -205,7 +247,7 @@ class CoupangReviewCrawler:
         self.driver.execute_script(
             "arguments[0].scrollIntoView({block:'center'});", pag_wrap
         )
-        for _ in range(60):  # 넉넉한 반복
+        for _ in range(60):
             if self.driver.find_elements(By.CSS_SELECTOR, btn_css):
                 return
             nxt = self.driver.find_elements(
@@ -219,7 +261,7 @@ class CoupangReviewCrawler:
             except TimeoutException:
                 pass
             time.sleep(0.4)
-        raise RuntimeError(f"페이지 버튼 {page} 를 노출시키지 못했습니다.")
+        raise RuntimeError(f"페이지 버튼 {page} 노출 실패")
 
     def _go_to_page(self, page: int):
         if page == 1:
@@ -234,11 +276,9 @@ class CoupangReviewCrawler:
             )
         )
         self._safe_click(btn)
-        time.sleep(0.8)
+        time.sleep(random.uniform(0.7, 1.2))
 
-    # ------------------------------------------------------------------ #
-    # main
-    # ------------------------------------------------------------------ #
+    # ---------------------- main ----------------------------- #
     def run(self) -> List[Review]:
         logger.info("▶ 리뷰 섹션 오픈 중…")
         try:
@@ -255,23 +295,29 @@ class CoupangReviewCrawler:
             try:
                 if p > 1:
                     self._go_to_page(p)
-                html = self.driver.page_source
+
+                html = self._safe_page_source()
+                if not html:
+                    logger.warning("페이지 소스 없음 – 중단")
+                    break
+
                 parsed = parse_reviews(html, p, start_rank=len(all_rs) + 1)
                 if not parsed:
-                    logger.warning("리뷰 파싱 0건 – 더 이상 페이지가 없을 수 있습니다.")
+                    logger.warning("리뷰 0건 – 이후 페이지 없음")
                     break
                 all_rs.extend(parsed)
+
+                # 요청 페이스 조절
+                time.sleep(random.uniform(0.8, 1.5))
+
             except Exception as e:
-                logger.error(
-                    "페이지 %d 처리 중 오류, 크롤링을 중단합니다: %s", p, e, exc_info=True
-                )
-                break  # 부분 데이터라도 반환
+                logger.error("페이지 %d 오류 – 부분 수집 후 중단: %s", p, e, exc_info=True)
+                break
+
         self._close()
         return all_rs
 
-    # ------------------------------------------------------------------ #
-    # save
-    # ------------------------------------------------------------------ #
+    # ---------------------- save ----------------------------- #
     def save(self, reviews: List[Review]):
         if not reviews:
             logger.warning("저장할 리뷰가 없습니다.")
@@ -282,10 +328,8 @@ class CoupangReviewCrawler:
         fp = self.outdir / f"coupang_reviews_{ts}.{self.fmt}"
         if self.fmt == "csv":
             df.to_csv(fp, index=False)
-        elif self.fmt == "json":
-            df.to_json(fp, orient="records", force_ascii=False, indent=2)
         else:
-            raise ValueError("fmt 는 csv | json 중 하나여야 합니다.")
+            df.to_json(fp, orient="records", force_ascii=False, indent=2)
         logger.info("✅ 저장 완료 → %s (%d rows)", fp, len(df))
 
 
@@ -296,13 +340,13 @@ class CoupangReviewCrawler:
 
 def cli(argv: List[str] | None = None):
     parser = argparse.ArgumentParser(
-        description="쿠팡 상품 리뷰 스크레이퍼 (2025-07, 오류-복구/부분-저장 대응)"
+        description="쿠팡 상품 리뷰 스크레이퍼 (스텔스/alert 복구 대응)"
     )
     parser.add_argument("--url", required=True, help="상품 상세 URL")
-    parser.add_argument("--pages", type=int, default=1, help="가져올 리뷰 페이지 수")
+    parser.add_argument("--pages", type=int, default=20, help="리뷰 페이지 수")
     parser.add_argument("--headless", type=int, choices=[0, 1], default=1)
     parser.add_argument("--fmt", default="csv", choices=["csv", "json"])
-    parser.add_argument("--outdir", default="./output")
+    parser.add_argument("--outdir", default="./output/reviews")
     args = parser.parse_args(argv)
 
     crawler = CoupangReviewCrawler(
@@ -317,7 +361,6 @@ def cli(argv: List[str] | None = None):
     try:
         reviews = crawler.run()
     finally:
-        # run() 이 어떤 상황이든 반환한 분량까지 저장
         crawler.save(reviews)
 
 
