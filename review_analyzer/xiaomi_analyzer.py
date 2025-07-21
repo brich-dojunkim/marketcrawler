@@ -427,12 +427,11 @@ class BatchXiaomiReviewAnalyzer:
         
         print("="*60)
 
-
 def main():
     """메인 실행 함수"""
-    # 경로 설정
-    reviews_dir = "/Users/brich/Desktop/marketcrawler/crawler/output/reviews_unique"
-    product_info_path = "/Users/brich/Desktop/marketcrawler/crawler/output/xiaomi_store_20250704_103745.csv"
+    # 경로 설정 (수정된 부분)
+    reviews_dir = "/Users/brich/Desktop/marketcrawler/crawler/operators/output/naver_reviews1"
+    product_info_path = "/Users/brich/Desktop/marketcrawler/crawler/output/xiaomi_store_20250704_103745.csv"  # 상품 정보 파일이 있다면
     output_dir = "/Users/brich/Desktop/marketcrawler/output"
     
     # 분석기 초기화 및 실행
@@ -451,7 +450,6 @@ def main():
         print(f"\n🎉 분석 완료! 결과 파일: {output_file}")
     else:
         print("❌ 분석할 데이터가 없습니다.")
-
 
 if __name__ == "__main__":
     main()
