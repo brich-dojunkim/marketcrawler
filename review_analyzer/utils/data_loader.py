@@ -1,5 +1,5 @@
 # utils/data_loader.py
-"""데이터 로딩 및 컬럼 분석"""
+"""데이터 로딩 및 컬럼 분석 - 개선된 버전"""
 
 import pandas as pd
 import os
@@ -7,7 +7,7 @@ from typing import Tuple, List, Optional
 
 def load_csv_data(file_path: str) -> Optional[pd.DataFrame]:
     """
-    CSV 파일 로딩
+    CSV 파일 로딩 - 개선된 버전
     
     Args:
         file_path: CSV 파일 경로
@@ -19,6 +19,14 @@ def load_csv_data(file_path: str) -> Optional[pd.DataFrame]:
         df = pd.read_csv(file_path)
         print(f"✅ 데이터 로딩 성공: {len(df):,}개 리뷰")
         print(f"📊 컬럼 정보: {list(df.columns)}")
+        
+        # 데이터 품질 체크
+        print(f"📋 데이터 품질 체크:")
+        for col in df.columns:
+            null_count = df[col].isna().sum()
+            null_pct = (null_count / len(df)) * 100
+            print(f"   - {col}: {null_count}개 NaN ({null_pct:.1f}%)")
+        
         return df
         
     except FileNotFoundError:
@@ -30,7 +38,7 @@ def load_csv_data(file_path: str) -> Optional[pd.DataFrame]:
 
 def identify_text_columns(df: pd.DataFrame, min_avg_length: int = 10) -> List[str]:
     """
-    텍스트 컬럼 식별
+    텍스트 컬럼 식별 - 개선된 버전
     
     Args:
         df: 분석할 DataFrame
@@ -43,15 +51,24 @@ def identify_text_columns(df: pd.DataFrame, min_avg_length: int = 10) -> List[st
     
     for col in df.columns:
         if df[col].dtype == 'object':
-            avg_length = df[col].dropna().astype(str).str.len().mean()
-            if avg_length > min_avg_length:
-                text_columns.append(col)
+            # NaN이 아닌 값들만으로 평균 길이 계산
+            valid_texts = df[col].dropna().astype(str)
+            if len(valid_texts) > 0:
+                avg_length = valid_texts.str.len().mean()
+                valid_ratio = len(valid_texts) / len(df)
+                
+                print(f"🔍 {col} 컬럼 분석:")
+                print(f"   - 평균 길이: {avg_length:.1f}자")
+                print(f"   - 유효 데이터 비율: {valid_ratio:.1%}")
+                
+                if avg_length > min_avg_length and valid_ratio > 0.1:  # 50% 이상 유효 데이터
+                    text_columns.append(col)
     
     return text_columns
 
 def identify_rating_columns(df: pd.DataFrame, min_val: int = 1, max_val: int = 10) -> List[str]:
     """
-    평점 컬럼 식별
+    평점 컬럼 식별 - 개선된 버전
     
     Args:
         df: 분석할 DataFrame
@@ -65,10 +82,19 @@ def identify_rating_columns(df: pd.DataFrame, min_val: int = 1, max_val: int = 1
     
     for col in df.columns:
         if df[col].dtype in ['int64', 'float64']:
-            col_min = df[col].min()
-            col_max = df[col].max()
-            if min_val <= col_min and col_max <= max_val:
-                rating_columns.append(col)
+            # NaN이 아닌 값들만으로 범위 확인
+            valid_ratings = df[col].dropna()
+            if len(valid_ratings) > 0:
+                col_min = valid_ratings.min()
+                col_max = valid_ratings.max()
+                unique_count = valid_ratings.nunique()
+                
+                print(f"🔍 {col} 컬럼 분석:")
+                print(f"   - 범위: {col_min} ~ {col_max}")
+                print(f"   - 고유값 수: {unique_count}개")
+                
+                if min_val <= col_min and col_max <= max_val and unique_count <= 10:
+                    rating_columns.append(col)
     
     return rating_columns
 
@@ -82,11 +108,12 @@ def identify_columns(df: pd.DataFrame) -> Tuple[List[str], List[str]]:
     Returns:
         (텍스트 컬럼 리스트, 평점 컬럼 리스트)
     """
+    print(f"\n🔍 컬럼 분석 중...")
     text_columns = identify_text_columns(df)
     rating_columns = identify_rating_columns(df)
     
-    print(f"🔍 텍스트 컬럼 후보: {text_columns}")
-    print(f"🔍 평점 컬럼 후보: {rating_columns}")
+    print(f"\n📝 텍스트 컬럼 후보: {text_columns}")
+    print(f"⭐ 평점 컬럼 후보: {rating_columns}")
     
     return text_columns, rating_columns
 
@@ -118,7 +145,7 @@ def select_columns(text_columns: List[str], rating_columns: List[str]) -> Tuple[
 
 def validate_data(df: pd.DataFrame, text_col: str, rating_col: Optional[str] = None) -> bool:
     """
-    데이터 유효성 검증
+    데이터 유효성 검증 - 개선된 버전
     
     Args:
         df: DataFrame
@@ -128,6 +155,8 @@ def validate_data(df: pd.DataFrame, text_col: str, rating_col: Optional[str] = N
     Returns:
         유효성 검증 결과
     """
+    print(f"\n✅ 데이터 유효성 검증 중...")
+    
     # 텍스트 컬럼 존재 확인
     if text_col not in df.columns:
         print(f"❌ 텍스트 컬럼 '{text_col}'이 존재하지 않습니다.")
@@ -138,11 +167,30 @@ def validate_data(df: pd.DataFrame, text_col: str, rating_col: Optional[str] = N
         print(f"❌ 평점 컬럼 '{rating_col}'이 존재하지 않습니다.")
         return False
     
-    # 빈 데이터 확인
-    text_data = df[text_col].dropna()
-    if len(text_data) == 0:
+    # 텍스트 데이터 품질 확인
+    text_data = df[text_col].dropna().astype(str)
+    valid_text_data = text_data[text_data.str.strip().str.len() > 0]
+    
+    print(f"📊 텍스트 데이터 품질:")
+    print(f"   - 전체 행 수: {len(df)}")
+    print(f"   - NaN이 아닌 텍스트: {len(text_data)}개")
+    print(f"   - 유효한 텍스트: {len(valid_text_data)}개")
+    print(f"   - 유효 비율: {len(valid_text_data)/len(df)*100:.1f}%")
+    
+    if len(valid_text_data) == 0:
         print(f"❌ 텍스트 컬럼 '{text_col}'에 유효한 데이터가 없습니다.")
         return False
+    
+    if len(valid_text_data) < len(df) * 0.1:  # 10% 미만이면 경고
+        print(f"⚠️ 유효한 텍스트 데이터가 적습니다 ({len(valid_text_data)}개)")
+    
+    # 평점 데이터 품질 확인
+    if rating_col:
+        rating_data = df[rating_col].dropna()
+        print(f"📊 평점 데이터 품질:")
+        print(f"   - 유효한 평점: {len(rating_data)}개")
+        print(f"   - 평점 범위: {rating_data.min()} ~ {rating_data.max()}")
+        print(f"   - 평균 평점: {rating_data.mean():.2f}")
     
     print(f"✅ 데이터 유효성 검증 완료")
     return True

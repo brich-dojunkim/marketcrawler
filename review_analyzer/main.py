@@ -369,21 +369,29 @@ class DataDrivenReviewAnalysisSystem:
             traceback.print_exc()
             return None
 
-
 def main():
-    """메인 실행 함수"""
-    # 설정
-    file_path = f'{DEFAULT_OUTPUT_DIR}/{DEFAULT_DATA_FILE}'
-    output_dir = DEFAULT_OUTPUT_DIR
+    """메인 실행 함수 - 터미널 입력 방식"""
+    
+    # 사용자로부터 경로 입력받기
+    from config.settings import get_user_paths
+    
+    input_file, output_dir = get_user_paths()
+    
+    if not input_file:
+        print("❌ 올바른 파일을 선택해주세요.")
+        return None
+    
+    print(f"\n🚀 분석을 시작합니다...")
+    print(f"📁 입력: {input_file}")
+    print(f"📁 출력: {output_dir}")
     
     # 데이터 기반 분석 시스템 초기화
     system = DataDrivenReviewAnalysisSystem(output_dir)
     
     # 전체 분석 실행
-    output_file = system.run_full_analysis(file_path)
+    output_file = system.run_full_analysis(input_file)
     
     return output_file
-
 
 if __name__ == "__main__":
     main()

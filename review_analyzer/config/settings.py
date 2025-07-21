@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 
 # 기본 설정
-DEFAULT_OUTPUT_DIR = '/Users/brich/Desktop/marketcrawler/output'
+DEFAULT_OUTPUT_DIR = '/Users/brich/Desktop/marketcrawler/review_analyzer/csv_output'
 DEFAULT_DATA_FILE = 'coupang_reviews_20250701_184246.csv'
 
 # 한글 폰트 경로 (시각화용)
@@ -34,6 +34,48 @@ ANALYSIS_PARAMS = {
     'min_phrase_freq': 3,
     'cluster_method': 'kmeans'
 }
+
+def get_user_paths():
+    """터미널에서 사용자 입력 받기"""
+    print("\n" + "="*50)
+    print("📁 파일 경로 설정")
+    print("="*50)
+    
+    # 입력 파일 경로
+    while True:
+        input_path = input("분석할 CSV 파일 경로를 입력하세요: ").strip()
+        
+        if not input_path:
+            print("❌ 경로를 입력해주세요.")
+            continue
+        
+        # 상대 경로를 절대 경로로 변환
+        input_path = os.path.abspath(input_path)
+        
+        if not os.path.exists(input_path):
+            print(f"❌ 파일을 찾을 수 없습니다: {input_path}")
+            continue
+        
+        if not input_path.lower().endswith('.csv'):
+            print("❌ CSV 파일만 지원됩니다.")
+            continue
+        
+        print(f"✅ 입력 파일: {input_path}")
+        break
+    
+    # 출력 디렉토리 경로
+    output_path = input(f"결과 저장 디렉토리 (엔터=기본값 '{DEFAULT_OUTPUT_DIR}'): ").strip()
+    
+    if not output_path:
+        output_path = DEFAULT_OUTPUT_DIR
+    else:
+        output_path = os.path.abspath(output_path)
+    
+    # 출력 디렉토리 생성
+    output_path = ensure_output_dir(output_path)
+    print(f"✅ 출력 디렉토리: {output_path}")
+    
+    return input_path, output_path
 
 def get_output_filename(prefix="analysis_report"):
     """출력 파일명 생성"""
